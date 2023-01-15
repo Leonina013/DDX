@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
-from pyDESeq2 import DESeq2
+import rpy2.robjects as robjects
+from rpy2.robjects import pandas2ri
+pandas2ri.activate()
 
 st.set_page_config(page_title="Differential Expression Analysis", page_icon=":guardsman:", layout="wide")
 
@@ -18,20 +20,25 @@ def main():
     data = upload_file()
     if data is not None:
         st.write("Data shape: ", data.shape)
-        condition_col1 = st.selectbox("Select the column name of the condition known variable", data.columns)
-        condition_col2 = st.selectbox("Select the column name of the condition new variable", data.columns)
-        known_samples = data[data[condition_col1] == "known"]
-        new_samples = data[data[condition_col2] == "new"]
+        condition_col = st.selectbox("Select the column name of the condition variable", data.columns)
+        known_samples = data[data[condition_col] == "known"]
+        new_samples = data[data[condition_col] == "new"]
         
-        deseq2_known = DESeq2(known_samples, design_formula="~ 1")
-        deseq2_known.run_analysis()
+        robjects.r('''
+            library(DESeq2)
+            ''')
         
-        deseq2_new = DESeq2(new_samples, design_formula="~ 1")
-        deseq2_new.run_analysis()
+        known_dds = robjects.r['DESeqDataSetFromMatrix'](countData = pandas2ri.py2ri(known_samples), 
+                                                         colData = pandas2ri.py2ri(known_samples.loc[:,condition_col]),
+                                                         design = robjects.Formula('~1'))
+        robjects.r('dds <- estimateSizeFactors(dds)')
+        robjects.r('dds <- estimateDispersions(dds)')
+        robjects.r('res <- nbinomTest(dds,"known","new")')
         
-        comparison = deseq2_known.compare_to(deseq2_new)
+        results = robjects.r['res']
+        
         st.write("Differentially Expressed genes:")
-        st.write(comparison)
+        st.write(results)
 
 if __name__=="__main__":
     main()
